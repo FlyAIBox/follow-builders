@@ -14,6 +14,12 @@
 //
 // Usage: node prepare-digest.js
 // Output: JSON to stdout
+//
+// 中文维护说明：
+// 这个脚本是“用户侧运行时”的入口，不直接写摘要，也不调用任何模型。
+// 它只负责把远端 feed、远端/本地 prompt、用户偏好合并成一个稳定 JSON。
+// Codex 或其他 agent 读取该 JSON 后，再根据 prompts 字段完成筛选、总结、
+// 翻译和最终排版。这样可以把网络抓取与编辑判断清晰分离。
 // ============================================================================
 
 import { readFile, mkdir } from 'fs/promises';
@@ -26,10 +32,14 @@ import { homedir } from 'os';
 const USER_DIR = join(homedir(), '.follow-builders');
 const CONFIG_PATH = join(USER_DIR, 'config.json');
 
+// 远端 feed 是中心化生成的公开产物。用户运行摘要时只需要读这些 JSON，
+// 不需要 X、YouTube、pod2txt 等抓取侧 API key。
 const FEED_X_URL = 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json';
 const FEED_PODCASTS_URL = 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcasts.json';
 const FEED_BLOGS_URL = 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json';
 
+// prompt 也优先走远端，便于中心化更新“什么算高质量 AI/Agent/GPU 信号”
+// 的判断口径；用户自定义 prompt 仍然拥有最高优先级。
 const PROMPTS_BASE = 'https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/prompts';
 const PROMPT_FILES = [
   'summarize-podcast.md',
@@ -42,15 +52,40 @@ const PROMPT_FILES = [
 // -- Fetch helpers -----------------------------------------------------------
 
 async function fetchJSON(url) {
+  // feed 获取失败不直接抛错，而是返回 null；主流程会把它记录为
+  // non-fatal error。这样某一路 feed 临时不可用时，其他内容仍可摘要。
   const res = await fetch(url);
   if (!res.ok) return null;
   return res.json();
 }
 
 async function fetchText(url) {
+  // prompt 获取也采用同样的软失败策略，后续会回退到本地 prompt。
   const res = await fetch(url);
   if (!res.ok) return null;
   return res.text();
+}
+
+async function loadLocalSourcesMetadata(scriptDir, errors) {
+  // 本地 source registry 带有 focus 元数据，可帮助 LLM 理解每个来源
+  // 为什么值得关注。远端 feed 尚未包含 focus 时，这里会补齐上下文。
+  const sourcesPath = join(scriptDir, '..', 'config', 'default-sources.json');
+  try {
+    return JSON.parse(await readFile(sourcesPath, 'utf-8'));
+  } catch (err) {
+    errors.push(`Could not read local sources metadata: ${err.message}`);
+    return {};
+  }
+}
+
+function enrichWithFocus(items, lookup, keyName) {
+  // 不改变 feed 原始字段，只在缺少 focus 时补充说明。
+  // keyName 对 X 使用 handle，对播客/博客使用 name。
+  return items.map((item) => {
+    const key = String(item[keyName] || '').toLowerCase();
+    const focus = lookup.get(key)?.focus;
+    return focus && !item.focus ? { ...item, focus } : item;
+  });
 }
 
 // -- Main --------------------------------------------------------------------
@@ -59,6 +94,8 @@ async function main() {
   const errors = [];
 
   // 1. Read user config
+  // 用户配置只影响语言、频率和交付方式，不参与中心 feed 的抓取。
+  // 如果配置损坏，继续使用默认值并把错误交给 LLM/调用方展示。
   let config = {
     language: 'en',
     frequency: 'daily',
@@ -73,6 +110,7 @@ async function main() {
   }
 
   // 2. Fetch all three feeds
+  // 三类 feed 并行获取，降低用户按需触发 /ai 时的等待时间。
   const [feedX, feedPodcasts, feedBlogs] = await Promise.all([
     fetchJSON(FEED_X_URL),
     fetchJSON(FEED_PODCASTS_URL),
@@ -108,8 +146,10 @@ async function main() {
   const scriptDir = decodeURIComponent(new URL('.', import.meta.url).pathname);
   const localPromptsDir = join(scriptDir, '..', 'prompts');
   const userPromptsDir = join(USER_DIR, 'prompts');
+  const localSources = await loadLocalSourcesMetadata(scriptDir, errors);
 
   for (const filename of PROMPT_FILES) {
+    // prompt key 使用 snake_case，方便 LLM 在输出 JSON 中稳定引用。
     const key = filename.replace('.md', '').replace(/-/g, '_');
     const userPath = join(userPromptsDir, filename);
     const localPath = join(localPromptsDir, filename);
@@ -135,7 +175,32 @@ async function main() {
     }
   }
 
+  const podcastFocusByName = new Map(
+    (localSources.podcasts || []).map((source) => [
+      source.name.toLowerCase(),
+      source
+    ])
+  );
+  const blogFocusByName = new Map(
+    (localSources.blogs || []).map((source) => [
+      source.name.toLowerCase(),
+      source
+    ])
+  );
+  const xFocusByHandle = new Map(
+    (localSources.x_accounts || []).map((source) => [
+      source.handle.toLowerCase(),
+      source
+    ])
+  );
+
+  const podcasts = enrichWithFocus(feedPodcasts?.podcasts || [], podcastFocusByName, 'name');
+  const x = enrichWithFocus(feedX?.x || [], xFocusByHandle, 'handle');
+  const blogs = enrichWithFocus(feedBlogs?.blogs || [], blogFocusByName, 'name');
+
   // 4. Build the output — everything the LLM needs in one blob
+  // 输出结构是这个 skill 和 Codex/其他 agent 的主要接口。新增字段应保持
+  // 向后兼容，避免破坏既有 prompt 或自动化流程。
   const output = {
     status: 'ok',
     generatedAt: new Date().toISOString(),
@@ -148,16 +213,16 @@ async function main() {
     },
 
     // Content to remix
-    podcasts: feedPodcasts?.podcasts || [],
-    x: feedX?.x || [],
-    blogs: feedBlogs?.blogs || [],
+    podcasts,
+    x,
+    blogs,
 
     // Stats for the LLM to reference
     stats: {
-      podcastEpisodes: feedPodcasts?.podcasts?.length || 0,
-      xBuilders: feedX?.x?.length || 0,
-      totalTweets: (feedX?.x || []).reduce((sum, a) => sum + a.tweets.length, 0),
-      blogPosts: feedBlogs?.blogs?.length || 0,
+      podcastEpisodes: podcasts.length,
+      xBuilders: x.length,
+      totalTweets: x.reduce((sum, a) => sum + a.tweets.length, 0),
+      blogPosts: blogs.length,
       feedGeneratedAt: feedX?.generatedAt || feedPodcasts?.generatedAt || feedBlogs?.generatedAt || null
     },
 

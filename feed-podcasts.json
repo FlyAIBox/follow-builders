@@ -1,4 +1,5 @@
 {
+  "_comment": "中心生成的播客 feed。podcasts 保存已取得转录文本的新节目；transcript 供 LLM 摘要；errors 记录转录或 RSS 问题。",
   "generatedAt": "2026-06-03T08:04:06.237Z",
   "lookbackHours": 336,
   "podcasts": [

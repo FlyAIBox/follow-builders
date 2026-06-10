@@ -1,4 +1,5 @@
 {
+  "_comment": "中心 feed 生成端的去重状态。seenTweets、seenVideos、seenArticles 的 key 是已处理内容 ID/URL，value 是记录时间戳；generate-feed.js 会定期清理过旧条目，避免重复推送同一条热点。",
   "seenTweets": {
     "2060148078754267426": 1780088290194,
     "2060111215226237380": 1780088290194,

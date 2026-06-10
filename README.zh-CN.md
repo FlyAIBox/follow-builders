@@ -102,12 +102,49 @@ cd ~/.claude/skills/follow-builders/scripts && npm install
 
 ## 工作原理
 
-1. 中心化 feed 每日更新，抓取所有信息源的最新内容（博客文章通过网页抓取，YouTube 字幕通过 Supadata，X/Twitter 通过官方 API）
+1. 中心化 feed 每日更新，抓取所有信息源的最新内容（博客文章通过网页抓取，播客转录文本通过 pod2txt，X/Twitter 通过官方 API）
 2. 你的 agent 获取 feed——一次 HTTP 请求，不需要 API key
 3. 你的 agent 根据你的偏好将原始内容重新混编为易消化的摘要
 4. 摘要推送到你的通讯工具（或直接在聊天中显示）
 
 查看 [examples/sample-digest.md](examples/sample-digest.md) 了解输出示例。
+
+## 架构说明
+
+Follow Builders 分为“中心化 feed 生成”和“本地 skill 运行时”两部分：
+
+1. **信息源注册表** — `config/default-sources.json` 定义精选信息源，包括播客、AI 公司官方博客，以及来自 AI 建造者、研究员、产品负责人、GPU/基础设施观察者、Agent 工具实践者的 X 账号。
+2. **中心 feed 生成层** — `scripts/generate-feed.js` 在维护者环境或 GitHub Actions 中运行，抓取 X 帖子、播客 RSS/转录文本和官方博客文章，用 `state-feed.json` 去重，然后生成 `feed-x.json`、`feed-podcasts.json`、`feed-blogs.json`。
+3. **用户侧输入打包层** — `scripts/prepare-digest.js` 获取已发布的 feed JSON 和 prompt 文件，再合并用户本地配置 `~/.follow-builders/config.json`，最终输出一个给 LLM 使用的 JSON。
+4. **LLM 混编层** — Agent 读取该 JSON，并按照 `prompts/` 里的指令对原始内容进行排序、分组、摘要、翻译和串联，重点筛选 AI、Agent、推理基础设施、GPU 相关的高质量信号。
+5. **交付层** — `scripts/deliver.js` 将最终摘要输出到 stdout、Telegram 或邮件。OpenClaw 也可以通过自己的 channel 系统完成交付。
+
+这条边界是刻意设计的：脚本负责确定性的抓取、规范化、去重和交付；LLM 只负责编辑判断与表达。这样可以把 API key、定时任务、去重状态和推送逻辑从 prompt 层隔离出来。
+
+## Codex 使用说明
+
+此仓库可以作为 Codex skill 使用。将目录安装或复制到 Codex skills 目录后，在 Codex 中直接请求使用该 skill：
+
+```bash
+mkdir -p ~/.codex/skills
+git clone https://github.com/zarazhangrui/follow-builders.git ~/.codex/skills/follow-builders
+cd ~/.codex/skills/follow-builders/scripts && npm install
+```
+
+常用 Codex 调用方式：
+
+- `/ai`
+- `使用 follow-builders 准备今天的 AI 建造者摘要`
+- `用 follow-builders 汇总最新 Agent 和 GPU 基础设施信号`
+- `把 follow-builders 优化成更关注 Agent、GPU、推理基础设施和产品发布`
+
+按需使用时，Codex 会运行 `scripts/prepare-digest.js`，读取返回的 JSON，结合 prompt 文件生成摘要，并直接在对话中展示。若要定时推送，可配置 `~/.follow-builders/config.json`，再用 OpenClaw cron、系统 cron 或外部调度器串起 prepare -> summarize -> deliver 流程。
+
+如果要提升 AI/Agent/GPU 热点聚合质量，请把“信息源”和“摘要口径”分开调整：
+
+- 在 `config/default-sources.json` 中增删账号和内容源
+- 在 `prompts/summarize-*.md` 中调整排序、筛选和摘要标准
+- `feed-*.json` 是生成产物，除调试外不建议手动修改
 
 ## 隐私
 

@@ -111,12 +111,67 @@ is fetched centrally and updated daily.
 ## How It Works
 
 1. A central feed is updated daily with the latest content from all sources
-   (blog articles via web scraping, YouTube transcripts via Supadata, X/Twitter via official API)
+   (blog articles via web scraping, podcast transcripts via pod2txt, X/Twitter via official API)
 2. Your agent fetches the feed — one HTTP request, no API keys
 3. Your agent remixes the raw content into a digestible summary using your preferences
 4. The digest is delivered to your messaging app (or shown in-chat)
 
 See [examples/sample-digest.md](examples/sample-digest.md) for what the output looks like.
+
+## Architecture
+
+Follow Builders is split into a central feed pipeline and a local skill runtime:
+
+1. **Source registry** — `config/default-sources.json` defines the curated source list:
+   podcasts, official AI blogs, and X accounts from builders, researchers, product
+   leaders, GPU/infra observers, and agent-tooling practitioners.
+2. **Central feed generation** — `scripts/generate-feed.js` runs in the maintainer
+   environment or GitHub Actions. It fetches X posts, podcast RSS/transcripts, and
+   official blog articles, deduplicates them with `state-feed.json`, then writes
+   `feed-x.json`, `feed-podcasts.json`, and `feed-blogs.json`.
+3. **User-side input packaging** — `scripts/prepare-digest.js` fetches the published
+   feed JSON files and prompt files, merges them with the user's local preferences
+   from `~/.follow-builders/config.json`, and prints one JSON payload for the LLM.
+4. **LLM remix layer** — the agent reads the payload and follows the prompt files in
+   `prompts/` to rank, group, summarize, translate, and connect the raw items into
+   a digest focused on high-signal AI, agents, infrastructure, and GPU-related news.
+5. **Delivery layer** — `scripts/deliver.js` sends the final digest to stdout,
+   Telegram, or email. OpenClaw can also deliver through its own channel system.
+
+The data boundary is intentional: scripts fetch and normalize content
+deterministically, while the LLM is only responsible for editorial judgment and
+writing. This keeps API keys, scheduling, deduplication, and delivery out of the
+prompting layer.
+
+## Codex Usage
+
+This repository is a Codex-compatible skill. To use it in Codex, install or copy the
+folder into your Codex skills directory, then ask Codex to use the skill:
+
+```bash
+mkdir -p ~/.codex/skills
+git clone https://github.com/zarazhangrui/follow-builders.git ~/.codex/skills/follow-builders
+cd ~/.codex/skills/follow-builders/scripts && npm install
+```
+
+Example Codex prompts:
+
+- `/ai`
+- `Use follow-builders to prepare today's AI builders digest`
+- `Summarize the latest agent and GPU infrastructure signals from follow-builders`
+- `Update follow-builders to focus more on agents, GPUs, inference infra, and product launches`
+
+For on-demand use, Codex runs `scripts/prepare-digest.js`, reads the returned JSON,
+applies the prompt files, and prints the digest in the chat. For scheduled delivery,
+configure `~/.follow-builders/config.json` and use OpenClaw cron, system cron, or an
+external scheduler to run the same prepare -> summarize -> deliver flow.
+
+When customizing for higher-quality AI/Agent/GPU aggregation, edit sources and
+prompts separately:
+
+- Add or remove source accounts in `config/default-sources.json`
+- Adjust ranking and summarization criteria in `prompts/summarize-*.md`
+- Keep generated feed files as outputs; do not hand-edit them unless debugging
 
 ## Privacy
 

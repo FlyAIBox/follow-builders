@@ -1,4 +1,5 @@
 {
+  "_comment": "中心生成的 X/Twitter feed。generatedAt 为生成时间；lookbackHours 为抓取窗口；x 为按账号聚合的新帖；stats 为数量统计；errors 为非致命抓取问题。",
   "generatedAt": "2026-06-03T08:03:30.181Z",
   "lookbackHours": 24,
   "x": [

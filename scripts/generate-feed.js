@@ -11,6 +11,16 @@
 //
 // Usage: node generate-feed.js [--tweets-only | --podcasts-only | --blogs-only]
 // Env vars needed: X_BEARER_TOKEN, POD2TXT_API_KEY
+//
+// 中文维护说明：
+// 这个脚本属于“中心 feed 生成端”，通常由维护者或 GitHub Actions 定时运行。
+// 它会把多个外部来源规范化成三个稳定 JSON feed，供用户侧 prepare-digest.js
+// 读取。这里不做 LLM 摘要，只做抓取、去重、结构化和错误收集。
+//
+// 面向“热点 AI / Agent / GPU 高质量信息聚合”的优化入口主要有三处：
+// 1. config/default-sources.json：调整跟踪谁、哪些播客、哪些官方博客。
+// 2. 下方 lookback/max 常量：控制热点窗口、单源数量和噪音上限。
+// 3. prompts/*.md：控制 LLM 如何判断重要性、技术含量和可操作性。
 // ============================================================================
 
 import { readFile, writeFile } from "fs/promises";
@@ -25,9 +35,13 @@ const X_API_BASE = "https://api.x.com/2";
 // Using a real Chrome UA avoids 403 errors in GitHub Actions.
 const RSS_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+// 热点窗口：X 保持 24 小时以捕捉当天讨论，播客窗口更长以覆盖周更节目，
+// 博客窗口居中，避免官方文章因发布时间差异被漏掉。
 const TWEET_LOOKBACK_HOURS = 24;
 const PODCAST_LOOKBACK_HOURS = 336; // 14 days — podcasts publish weekly/biweekly, not daily
 const BLOG_LOOKBACK_HOURS = 72;
+// 单个来源的上限用于控制噪音：高质量摘要更需要“精选”，而不是把所有内容
+// 原样塞给 LLM。需要更强热点覆盖时，可以先扩源，再谨慎提高这些上限。
 const MAX_TWEETS_PER_USER = 3;
 const MAX_ARTICLES_PER_BLOG = 3;
 const X_USER_LOOKUP_BATCH_SIZE = 5;
@@ -50,6 +64,7 @@ async function loadState() {
   try {
     const state = JSON.parse(await readFile(STATE_PATH, "utf-8"));
     // Ensure seenArticles exists for older state files
+    // 兼容老版本 state-feed.json，避免新增博客去重后旧文件直接报错。
     if (!state.seenArticles) state.seenArticles = {};
     return state;
   } catch {
@@ -59,6 +74,7 @@ async function loadState() {
 
 async function saveState(state) {
   // Prune entries older than 7 days to prevent the file from growing forever
+  // 只需要防止短期重复即可，过旧 ID 定期清理，避免 state 文件无限增长。
   const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
   for (const [id, ts] of Object.entries(state.seenTweets)) {
     if (ts < cutoff) delete state.seenTweets[id];
@@ -75,6 +91,8 @@ async function saveState(state) {
 // -- Load Sources ------------------------------------------------------------
 
 async function loadSources() {
+  // 信息源注册表是质量控制的第一道门：优先加入一手建设者、官方团队、
+  // Agent 工具链、推理/GPU/基础设施相关的高信号来源。
   const sourcesPath = join(SCRIPT_DIR, "..", "config", "default-sources.json");
   return JSON.parse(await readFile(sourcesPath, "utf-8"));
 }
@@ -86,6 +104,8 @@ async function loadSources() {
 function parseRssFeed(xml) {
   const episodes = [];
   // Match each <item> block in the RSS feed
+  // 这里使用轻量正则解析 RSS，原因是脚本依赖尽量少，适合 GitHub Actions。
+  // 如果后续要支持更多复杂 feed，可以替换成 XML parser。
   const itemRegex = /<item>([\s\S]*?)<\/item>/gi;
   let itemMatch;
   while ((itemMatch = itemRegex.exec(xml)) !== null) {
@@ -131,6 +151,7 @@ function parseRssFeed(xml) {
 async function getYouTubeFeedUrl(channelUrl) {
   if (!channelUrl || !channelUrl.includes("youtube.com")) return null;
 
+  // 播放列表可以直接转换为 YouTube Atom feed，稳定且无需 API key。
   const playlistMatch = channelUrl.match(/[?&]list=([A-Za-z0-9_-]+)/);
   if (playlistMatch) {
     return `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistMatch[1]}`;
@@ -187,6 +208,8 @@ function parseYouTubePageData(html) {
     return videos;
   }
 
+  // YouTube 页面结构经常调整，所以这里用可选链逐层探测；
+  // 解析失败时返回空数组，让上层回退到播客频道 URL。
   const tabs = data?.contents?.twoColumnBrowseResultsRenderer?.tabs || [];
   for (const tab of tabs) {
     const gridItems =
@@ -332,6 +355,8 @@ async function fetchPod2txtTranscript(rssUrl, guid, apiKey) {
   const pollInterval = 30000; // 30 seconds between polls
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // pod2txt 是异步转录服务，同一个 guid 第一次请求可能只是启动任务。
+    // 轮询可以提高成功率，但总尝试次数受限，避免 CI 被单集播客卡住。
     const res = await fetch(`${POD2TXT_BASE}/transcript`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -382,6 +407,8 @@ async function fetchPodcastContent(podcasts, apiKey, state, errors) {
   const allCandidates = [];
 
   // Step 1: Discover episodes from each podcast's RSS feed
+  // 先收集所有候选，再统一按发布时间排序，这样不会因为某个播客排在配置前面
+  // 就抢占当天唯一的播客摘要名额。
   for (const podcast of podcasts) {
     if (!podcast.rssUrl) {
       errors.push(`Podcast: No rssUrl configured for ${podcast.name}`);
@@ -418,6 +445,7 @@ async function fetchPodcastContent(podcasts, apiKey, state, errors) {
       );
 
       // Check the 3 most recent episodes, skip already-seen ones
+      // 只检查最近 3 集：播客 feed 可能很长，热点摘要只需要近期候选。
       for (const episode of episodes.slice(0, 3)) {
         if (state.seenVideos[episode.guid]) {
           console.error(`    Skipping "${episode.title}" (already seen)`);
@@ -456,6 +484,7 @@ async function fetchPodcastContent(podcasts, apiKey, state, errors) {
   }
 
   // Step 3: Try each candidate until we get a transcript from pod2txt
+  // 只返回第一集成功转录的内容，控制 feed 体积和 LLM 摘要成本。
   for (const selected of withinWindow) {
     console.error(`    Fetching transcript for "${selected.title}"...`);
 
@@ -508,6 +537,7 @@ async function fetchPodcastContent(podcasts, apiKey, state, errors) {
       {
         source: "podcast",
         name: selected.podcast.name,
+        focus: selected.podcast.focus || "",
         title: selected.title,
         guid: selected.guid,
         url: youtubeUrl || selected.podcast.url,
@@ -528,6 +558,7 @@ function sleep(ms) {
 }
 
 async function fetchXWithRetry(url, options) {
+  // X API 偶发 5xx 时重试；429 不重试，因为它通常代表配额耗尽。
   let lastResponse;
   for (let attempt = 1; attempt <= X_RETRY_ATTEMPTS; attempt++) {
     try {
@@ -550,6 +581,7 @@ async function fetchXContent(xAccounts, bearerToken, state, errors) {
 
   // Batch lookup user IDs. Smaller batches make one flaky X response less likely
   // to wipe out the whole feed.
+  // 账号查 ID 和拉取 tweets 分开做，便于把单个失败记录为非致命错误。
   const handles = xAccounts.map((a) => a.handle);
   let userMap = {};
 
@@ -616,6 +648,8 @@ async function fetchXContent(xAccounts, bearerToken, state, errors) {
       const allTweets = data.data || [];
 
       // Filter out already-seen tweets, cap at 3
+      // 排除回复和转推后，仍可能有低信息量 quote。这里保留原始信号，
+      // 由 prompts 中的编辑规则决定是否进入最终摘要。
       const newTweets = [];
       for (const t of allTweets) {
         if (state.seenTweets[t.id]) continue; // dedup
@@ -646,6 +680,7 @@ async function fetchXContent(xAccounts, bearerToken, state, errors) {
         source: "x",
         name: account.name,
         handle: account.handle,
+        focus: account.focus || "",
         bio: userData.description,
         tweets: newTweets,
       });
@@ -669,6 +704,8 @@ function parseAnthropicEngineeringIndex(html) {
   const articles = [];
 
   // Strategy 1: Look for article data in Next.js __NEXT_DATA__ script tag
+  // 官方博客通常比社交媒体更接近一手信息，尤其适合捕捉模型、Agent、
+  // 推理基础设施和产品发布的正式细节。
   const nextDataMatch = html.match(
     /<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i,
   );
@@ -749,6 +786,7 @@ function extractAnthropicArticleContent(html) {
   let content = "";
 
   // Try to get structured data from Next.js __NEXT_DATA__
+  // 结构化数据优先，可以减少导航栏、页脚和推荐文章混入正文。
   const nextDataMatch = html.match(
     /<script[^>]*id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i,
   );
@@ -815,6 +853,7 @@ function extractClaudeBlogArticleContent(html) {
   let content = "";
 
   // Try JSON-LD structured data first (most reliable for metadata)
+  // JSON-LD 通常提供标题、作者和发布时间；正文仍需要从页面富文本区提取。
   const jsonLdRegex =
     /<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/gi;
   let jsonLdMatch;
@@ -897,6 +936,7 @@ async function fetchBlogContent(blogs, state, errors) {
 
     try {
       // Step 1: Discover articles from the blog index page
+      // 先从索引页发现 URL，再进入正文页提取全文，避免只摘要列表页简介。
       const indexRes = await fetch(blog.indexUrl, {
         headers: { "User-Agent": "FollowBuilders/1.0 (feed aggregator)" },
       });
@@ -970,9 +1010,11 @@ async function fetchBlogContent(blogs, state, errors) {
           }
 
           // Merge extracted data with what we already have from the index
+          // feed 中保留全文 content，LLM 可以判断文章技术含量，而不只看标题。
           results.push({
             source: "blog",
             name: blog.name,
+            focus: blog.focus || "",
             title: extracted.title || article.title || "Untitled",
             url: article.url,
             publishedAt: extracted.publishedAt || article.publishedAt || null,
@@ -1010,6 +1052,7 @@ async function main() {
 
   // If a specific --*-only flag is set, only that feed type runs.
   // If no flag is set, all three run.
+  // 分类型运行便于调试某一路抓取，也便于在 CI 中拆分配额敏感任务。
   const runTweets = tweetsOnly || (!podcastsOnly && !blogsOnly);
   const runPodcasts = podcastsOnly || (!tweetsOnly && !blogsOnly);
   const runBlogs = blogsOnly || (!tweetsOnly && !podcastsOnly);
@@ -1031,6 +1074,7 @@ async function main() {
   const errors = [];
 
   // Fetch tweets
+  // 每个 feed 都独立写文件；某一路失败时不会阻塞其他 feed 的产物更新。
   if (runTweets) {
     console.error("Fetching X/Twitter content...");
     const xContent = await fetchXContent(
@@ -1043,6 +1087,8 @@ async function main() {
 
     const totalTweets = xContent.reduce((sum, a) => sum + a.tweets.length, 0);
     const xFeed = {
+      _comment:
+        "中心生成的 X/Twitter feed。字段说明：generatedAt 为生成时间；lookbackHours 为抓取窗口；x 为按账号聚合的新帖；stats 为数量统计；errors 为非致命抓取问题。",
       generatedAt: new Date().toISOString(),
       lookbackHours: TWEET_LOOKBACK_HOURS,
       x: xContent,
@@ -1073,6 +1119,8 @@ async function main() {
     console.error(`  Found ${podcasts.length} new episodes`);
 
     const podcastFeed = {
+      _comment:
+        "中心生成的播客 feed。字段说明：podcasts 保存已取得转录文本的新节目；transcript 供 LLM 摘要；errors 记录转录或 RSS 问题。",
       generatedAt: new Date().toISOString(),
       lookbackHours: PODCAST_LOOKBACK_HOURS,
       podcasts,
@@ -1096,6 +1144,8 @@ async function main() {
     console.error(`  Found ${blogContent.length} new blog post(s)`);
 
     const blogFeed = {
+      _comment:
+        "中心生成的官方博客 feed。字段说明：blogs 保存新文章全文；content 供 LLM 判断技术和产品信号；errors 记录索引或正文抓取问题。",
       generatedAt: new Date().toISOString(),
       lookbackHours: BLOG_LOOKBACK_HOURS,
       blogs: blogContent,
@@ -1113,6 +1163,7 @@ async function main() {
   }
 
   // Save dedup state
+  // 抓取结束才统一保存，确保同一轮运行内的 tweet/episode/article 都被记录。
   await saveState(state);
 
   if (errors.length > 0) {
