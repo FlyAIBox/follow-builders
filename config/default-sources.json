@@ -6,8 +6,8 @@
   },
   "_extended_catalog": {
     "file": "config/bestblogs-sources.json",
-    "description_zh": "BestBlogs 扩展信息源目录（400 个），由 OPML 导入生成；日常 digest 默认仍使用本文件的精选列表。",
-    "description_en": "BestBlogs extended catalog (400 RSS sources) imported from OPML; the default daily digest still uses this curated list.",
+    "description_zh": "BestBlogs 扩展信息源目录（400 个），由 OPML 导入生成；与精选层并行，补充而非替代 default-sources。",
+    "description_en": "BestBlogs extended catalog (400 RSS sources) imported from OPML; runs in parallel with the curated layer — additive, not a replacement.",
     "regenerate": "cd scripts && npm run import-bestblogs",
     "config_docs": "config/README.md"
   },

@@ -323,19 +323,24 @@ cd ${CLAUDE_SKILL_DIR}/scripts && node prepare-digest.js 2>/dev/null
 
 The script outputs a single JSON blob with everything you need:
 - `config` — user's language and delivery preferences
-- `podcasts` — podcast episodes with full transcripts
-- `x` — builders with their recent tweets (text, URLs, bios)
+- `x`, `podcasts`, `blogs` — **curated layer** (26 X builders, official blogs, AI podcasts)
+- `bestblogs` — **extended layer** from bestblogs.dev (articles, podcasts, videos, X RSS)
 - `prompts` — the remix instructions to follow
-- `stats` — counts of episodes and tweets
+- `stats` — counts for both layers
 - `errors` — non-fatal issues (IGNORE these)
+
+Both layers are included in every digest when they have content. BestBlogs is additive; it does NOT replace the curated builder feeds.
 
 If the script fails entirely (no JSON output), tell the user to check their
 internet connection. Otherwise, use whatever content is in the JSON.
 
 ### Step 3: Check for content
 
-If `stats.podcastEpisodes` is 0 AND `stats.xBuilders` is 0, tell the user:
-"No new updates from your builders today. Check back tomorrow!" Then stop.
+If ALL of these are zero, tell the user "No new updates today. Check back tomorrow!" and stop:
+- `stats.xBuilders` + `stats.blogPosts` + `stats.podcastEpisodes` (curated layer)
+- `stats.bestblogsTotalItems` (BestBlogs extended layer)
+
+If either layer has content, continue and include both layers in the digest.
 
 ### Step 4: Remix content
 
@@ -343,21 +348,29 @@ If `stats.podcastEpisodes` is 0 AND `stats.xBuilders` is 0, tell the user:
 from the web, visit any URLs, or call any APIs. Everything is in the JSON.
 
 Read the prompts from the `prompts` field in the JSON:
-- `prompts.digest_intro` — overall framing rules
-- `prompts.summarize_podcast` — how to remix podcast transcripts
-- `prompts.summarize_tweets` — how to remix tweets
+- `prompts.digest_intro` — overall framing rules (two-part: curated + BestBlogs)
+- `prompts.summarize_tweets` — how to remix curated tweets (`x` array)
+- `prompts.summarize_blogs` — how to remix official blog posts (`blogs` array)
+- `prompts.summarize_podcast` — how to remix curated podcast transcripts (`podcasts` array)
+- `prompts.summarize_bestblogs` — how to remix BestBlogs RSS items (`bestblogs` object)
 - `prompts.translate` — how to translate to Chinese
 
-**Tweets (process first):** The `x` array has builders with tweets. Process one at a time:
-1. Use their `bio` field for their role (e.g. bio says "ceo @box" → "Box CEO Aaron Levie")
-2. Summarize their `tweets` using `prompts.summarize_tweets`
-3. Every tweet MUST include its `url` from the JSON
+**Part 1 — Curated layer (process first):**
 
-**Podcast (process second):** The `podcasts` array has at most 1 episode. If present:
-1. Summarize its `transcript` using `prompts.summarize_podcast`
-2. Use `name`, `title`, and `url` from the JSON object — NOT from the transcript
+**Tweets:** The root `x` array has builders with tweets. Process one at a time:
+1. Use their `bio` field for their role
+2. Summarize using `prompts.summarize_tweets`
+3. Every tweet MUST include its `url`
 
-Assemble the digest following `prompts.digest_intro`.
+**Official blogs:** The root `blogs` array. Summarize using `prompts.summarize_blogs`.
+
+**Podcasts:** The root `podcasts` array (with transcripts). Summarize using `prompts.summarize_podcast`.
+
+**Part 2 — BestBlogs extended (process second, if `bestblogs` has items):**
+
+Summarize high-signal items from `bestblogs.articles`, `bestblogs.podcasts`, `bestblogs.videos`, and `bestblogs.x` using `prompts.summarize_bestblogs`. Use only `title`, `summary`, and `url` fields (no transcripts). Add bestblogs.dev attribution per `digest_intro`.
+
+Assemble the full digest following `prompts.digest_intro`. Always include Part 1 when curated content exists; always include Part 2 when BestBlogs content exists.
 
 **ABSOLUTE RULES:**
 - NEVER invent or fabricate content. Only use what's in the JSON.

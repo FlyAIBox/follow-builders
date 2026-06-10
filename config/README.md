@@ -62,7 +62,12 @@ Output structure:
 }
 ```
 
-The extended catalog is a **reference pool** for discovery and future feed expansion. The default daily digest still uses the curated list in `default-sources.json` unless maintainers explicitly merge sources into the feed pipeline.
+The extended catalog is a **reference pool** for discovery and feed expansion. It runs **in parallel** with the curated layer in `default-sources.json` — daily digests include **both** when content is available.
+
+| Layer | Feed files | Content |
+|-------|------------|---------|
+| **Curated (original)** | `feed-x.json`, `feed-podcasts.json`, `feed-blogs.json` | 26 X + 6 podcasts + 2 blogs via X API / pod2txt / scrape |
+| **BestBlogs extended** | `feed-bestblogs.json` | 400 RSS sources via `generate-bestblogs-feed.js` |
 
 ---
 

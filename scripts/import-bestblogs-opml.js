@@ -15,6 +15,9 @@ const SCRIPT_DIR = decodeURIComponent(new URL('.', import.meta.url).pathname);
 const OPML_DIR = join(SCRIPT_DIR, '..', 'config', 'bestblogs', 'opml');
 const OUTPUT_PATH = join(SCRIPT_DIR, '..', 'config', 'bestblogs-sources.json');
 
+const OPML_REMOTE_BASE =
+  'https://raw.githubusercontent.com/ginobefun/BestBlogs/main';
+
 const OPML_FILES = {
   articles: 'BestBlogs_RSS_Articles.opml',
   podcasts: 'BestBlogs_RSS_Podcasts.opml',
@@ -66,7 +69,30 @@ function youtubeUrlFromRss(rssUrl) {
   return rssUrl;
 }
 
+async function syncOpmlFromRemote() {
+  if (process.argv.includes('--local-only')) return;
+  const { mkdir, writeFile: write } = await import('fs/promises');
+  await mkdir(OPML_DIR, { recursive: true });
+  for (const filename of Object.values(OPML_FILES)) {
+    const url = `${OPML_REMOTE_BASE}/${filename}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Failed to download ${url}: HTTP ${res.status}`);
+    await write(join(OPML_DIR, filename), await res.text());
+    console.error(`  synced ${filename}`);
+  }
+  // Also sync ALL opml if present upstream
+  const allUrl = `${OPML_REMOTE_BASE}/BestBlogs_RSS_ALL.opml`;
+  const allRes = await fetch(allUrl);
+  if (allRes.ok) {
+    await write(join(OPML_DIR, 'BestBlogs_RSS_ALL.opml'), await allRes.text());
+    console.error('  synced BestBlogs_RSS_ALL.opml');
+  }
+}
+
 async function main() {
+  console.error('Syncing OPML from BestBlogs repo...');
+  await syncOpmlFromRemote();
+
   const articlesRaw = await readFile(join(OPML_DIR, OPML_FILES.articles), 'utf-8');
   const podcastsRaw = await readFile(join(OPML_DIR, OPML_FILES.podcasts), 'utf-8');
   const videosRaw = await readFile(join(OPML_DIR, OPML_FILES.videos), 'utf-8');

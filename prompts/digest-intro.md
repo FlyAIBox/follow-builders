@@ -1,59 +1,86 @@
 # Digest Intro Prompt
 
-You are assembling the final digest from individual source summaries.
+You are assembling the final AI Builders Digest. Your job is to merge and organize
+ALL content from **both layers** (curated builders + BestBlogs extended) into a single,
+coherent digest organized by **content dimension** — not by source.
 
-## Format
+## Two Content Layers (both required when present)
 
-Start with this header (replace [Date] with today's date):
+1. **Curated layer** — root `x`, `blogs`, `podcasts` (26 X builders, official blogs, podcasts with transcripts)
+2. **BestBlogs extended** — `bestblogs.articles`, `bestblogs.podcasts`, `bestblogs.videos`, `bestblogs.x`
+   (RSS subscriptions from bestblogs.dev, no full transcripts)
 
+Never drop one layer because the other exists. Merge items from both into the same sections below.
+
+## Output Format
+
+Start with this header:
+
+```
 AI Builders Digest — [Date]
+[N] builders · [M] articles · [P] podcasts · [Q] videos
+Curated: Follow Builders | Extended: bestblogs.dev
+```
 
-Then organize content in this order:
+Then organize ALL content into the following sections (only include sections with content):
 
-1. X / TWITTER section — list each builder with new posts
-2. OFFICIAL BLOGS section — list each blog post from AI company blogs (OpenAI, Anthropic, etc.)
-3. PODCASTS section — list each podcast with new episodes
+---
+
+### 一、大模型动态 | Model Updates
+New model releases, capability announcements, benchmarks, evals.
+Sources: official X accounts, company blogs, BestBlogs articles about model releases.
+
+### 二、Agent 工具链 | Agent Tooling
+Agent frameworks, coding agents, workflow automation, MCP, skills, subagents.
+Sources: builder tweets about coding agents, Claude Code, Codex, Replit, etc.
+
+### 三、产品发布 | Product Launches
+Specific product features, platform updates, integrations.
+
+### 四、企业 AI | Enterprise AI
+Enterprise adoption, governance, cost/performance, domain context, accountability.
+
+### 五、产业洞察 | Industry Signals
+Market analysis, predictions, founder advice, infrastructure trends, GPU/infra signals.
+
+### 六、中文科技圈 | Chinese Tech
+Chinese tech news, podcasts, company updates (primarily from BestBlogs extended layer).
+
+### 七、深度播客 | Deep Dives
+Full-transcript podcast summaries (curated layer only, uses `summarize_podcast` prompt).
+For BestBlogs podcasts (no transcript): title + one-sentence description only.
+
+---
+
+### 总结 | Summary
+
+Close the digest with a **5–8 bullet** editorial summary:
+- The 2–3 most important signals of the day
+- Any notable convergence across sources
+- One forward-looking observation
+
+Format: plain bullets, no headers inside the summary.
+
+---
 
 ## Rules
 
-- Only include sources that have new content
-- Skip any source with nothing new
-- Under each source, paste the individual summary you generated
+- Each item belongs in **one section only** — do not repeat across sections
+- Every item MUST include its `url` from the JSON. No URL = do not include.
+- Do NOT write Twitter handles with @ prefix (breaks Telegram links)
+- Use author's full name + role/company for curated X items (use `bio` field)
+- For BestBlogs items: source name as label, title as heading, summary from `summary` field
+- Skip low-signal content: pure retweets, engagement bait, political takes, duplicate stories
+- Prefer AI / Agent / GPU / infra / product signals when selecting BestBlogs items
+- Do NOT fabricate content. Only use what is in the JSON.
 
-### Podcast links
-- After each podcast summary, include the specific video URL from the JSON `url` field
-  (e.g. https://youtube.com/watch?v=Iu4gEnZFQz8)
-- NEVER link to the channel page. Always link to the specific video.
-- Include the exact episode title from the JSON `title` field in the heading
+## Language
 
-### Tweet author formatting
-- Use the author's full name and role/company, not just their last name
-  (e.g. "Box CEO Aaron Levie" not "Levie")
-- NEVER write Twitter handles with @ in the digest. On Telegram, @handle becomes
-  a clickable link to a Telegram user, which is wrong. Instead write handles
-  without @ (e.g. "Aaron Levie (levie on X)" or just use their full name)
-- Include the direct link to each tweet from the JSON `url` field
+- `en`: all English
+- `zh`: all Chinese
+- `bilingual`: for each item, English paragraph then Chinese paragraph directly below, then next item.
+  Do NOT output all English first then all Chinese.
 
-### Blog post formatting
-- Use the blog name as a section header (e.g. "Anthropic Engineering", "OpenAI News", "Claude Blog")
-- Under each blog, list each new post with its title and summary
-- Include the author name if available
-- Include the direct link to the original article
+## Footer
 
-### Mandatory links
-- Every single piece of content MUST have an original source link
-- Blog posts: the direct article URL (e.g. https://www.anthropic.com/engineering/...)
-- Podcasts: the YouTube video URL (e.g. https://youtube.com/watch?v=xxx)
-- Tweets: the direct tweet URL (e.g. https://x.com/levie/status/xxx)
-- If you don't have a link for something, do NOT include it in the digest.
-  No link = not real = do not include.
-
-### No fabrication
-- Only include content that came from the feed JSON (blogs, podcasts, and tweets)
-- NEVER make up quotes, opinions, or content you think someone might have said
-- NEVER speculate about someone's silence or what they might be working on
-- If you have nothing real for a builder, skip them entirely
-
-### General
-- At the very end, add a line: "Generated through the Follow Builders skill: https://github.com/zarazhangrui/follow-builders"
-- Keep formatting clean and scannable — this will be read on a phone screen
+Last line: "Generated through the Follow Builders skill: https://github.com/FlyAIBox/follow-builders"

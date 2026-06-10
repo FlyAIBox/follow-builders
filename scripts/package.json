@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "generate-feed": "node generate-feed.js",
+    "generate-bestblogs-feed": "node generate-bestblogs-feed.js",
     "prepare-digest": "node prepare-digest.js",
     "import-bestblogs": "node import-bestblogs-opml.js"
   },

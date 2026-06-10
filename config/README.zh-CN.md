@@ -62,7 +62,12 @@ cd scripts && npm run import-bestblogs
 }
 ```
 
-扩展目录是 **参考池**，便于发现与后续扩展 feed；默认 daily digest 仍使用 `default-sources.json` 精选列表，除非维护者将条目合并进 feed 管道。
+扩展目录是 **参考池**，与 `default-sources.json` 精选层 **并行运行** — daily digest 在两边都有内容时会 **同时包含**。
+
+| 层级 | Feed 文件 | 内容 |
+|------|-----------|------|
+| **精选层（原有）** | `feed-x.json`、`feed-podcasts.json`、`feed-blogs.json` | 26 X + 6 播客 + 2 博客（X API / pod2txt / 抓取） |
+| **BestBlogs 扩展层** | `feed-bestblogs.json` | 400 RSS 源（`generate-bestblogs-feed.js` 生成） |
 
 ---
 
