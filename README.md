@@ -6,8 +6,7 @@ An AI-powered digest that tracks the top builders in AI — researchers, founder
 and engineers who are actually building things — and delivers curated summaries of
 what they're saying.
 
-**Philosophy:** Follow people who build products and have original opinions, not
-influencers who regurgitate information.
+**Philosophy:** Follow **builders** who ship products and share original opinions — not **influencers** who only repackage news.
 
 ## What You Get
 
@@ -17,6 +16,7 @@ WhatsApp, etc.) with:
 - Summaries of new podcast episodes from top AI podcasts
 - Key posts and insights from 26 curated AI builders on X/Twitter
 - Full articles from official AI company blogs (Anthropic Engineering, Claude Blog)
+- An extended catalog of **400 BestBlogs RSS sources** (articles, podcasts, videos, X) for discovery and future expansion
 - Links to all original content
 - Available in English, Chinese, or bilingual
 
@@ -82,6 +82,32 @@ These are plain English instructions, not code. Changes take effect on the next 
 - [Anthropic Engineering](https://www.anthropic.com/engineering) — technical deep-dives from the Anthropic team
 - [Claude Blog](https://claude.com/blog) — product announcements and updates from Claude
 
+> The default daily digest uses these **34 curated sources** (26 X + 6 podcasts + 2 blogs). See [`config/default-sources.json`](config/default-sources.json).
+
+## Extended Sources — BestBlogs (400)
+
+In addition to the curated tier, this repo includes **400 RSS subscriptions** shared publicly by **[bestblogs.dev](https://bestblogs.dev)**, curated in the [BestBlogs](https://github.com/ginobefun/BestBlogs) project. Reference: [Gino's notes on podcasts & videos](https://www.ginonotes.com/posts/bestblogs-sources-part2-podcasts-videos).
+
+**Same philosophy:** Follow **builders** who ship products and share original opinions — not **influencers** who only repackage news.
+
+### OPML files (`config/bestblogs/opml/`)
+
+| File | Category | Count |
+|------|----------|------:|
+| `BestBlogs_RSS_ALL.opml` | All | 400 |
+| `BestBlogs_RSS_Articles.opml` | Articles / blogs | 170 |
+| `BestBlogs_RSS_Podcasts.opml` | Podcasts | 30 |
+| `BestBlogs_RSS_Videos.opml` | Videos | 40 |
+| `BestBlogs_RSS_Twitters.opml` | Twitter / X | 160 |
+
+### Generated JSON
+
+Run `cd scripts && npm run import-bestblogs` to regenerate [`config/bestblogs-sources.json`](config/bestblogs-sources.json) from the OPML files.
+
+The extended catalog is a **reference pool** for browsing Chinese/English tech blogs, podcasts, video channels, and X accounts. The **default daily digest still uses the curated tier** unless maintainers merge entries into the feed pipeline.
+
+See [`config/README.md`](config/README.md) for full source configuration docs.
+
 ## Installation
 
 ### OpenClaw
@@ -90,13 +116,13 @@ These are plain English instructions, not code. Changes take effect on the next 
 clawhub install follow-builders
 
 # Or manually
-git clone https://github.com/zarazhangrui/follow-builders.git ~/skills/follow-builders
+git clone https://github.com/FlyAIBox/follow-builders.git ~/skills/follow-builders
 cd ~/skills/follow-builders/scripts && npm install
 ```
 
 ### Claude Code
 ```bash
-git clone https://github.com/zarazhangrui/follow-builders.git ~/.claude/skills/follow-builders
+git clone https://github.com/FlyAIBox/follow-builders.git ~/.claude/skills/follow-builders
 cd ~/.claude/skills/follow-builders/scripts && npm install
 ```
 
@@ -122,9 +148,7 @@ See [examples/sample-digest.md](examples/sample-digest.md) for what the output l
 
 Follow Builders is split into a central feed pipeline and a local skill runtime:
 
-1. **Source registry** — `config/default-sources.json` defines the curated source list:
-   podcasts, official AI blogs, and X accounts from builders, researchers, product
-   leaders, GPU/infra observers, and agent-tooling practitioners.
+1. **Source registry** — `config/default-sources.json` defines the curated list (26 X, 6 podcasts, 2 blogs). `config/bestblogs-sources.json` holds 400 BestBlogs RSS sources (from [bestblogs.dev](https://bestblogs.dev)).
 2. **Central feed generation** — `scripts/generate-feed.js` runs in the maintainer
    environment or GitHub Actions. It fetches X posts, podcast RSS/transcripts, and
    official blog articles, deduplicates them with `state-feed.json`, then writes
@@ -150,7 +174,7 @@ folder into your Codex skills directory, then ask Codex to use the skill:
 
 ```bash
 mkdir -p ~/.codex/skills
-git clone https://github.com/zarazhangrui/follow-builders.git ~/.codex/skills/follow-builders
+git clone https://github.com/FlyAIBox/follow-builders.git ~/.codex/skills/follow-builders
 cd ~/.codex/skills/follow-builders/scripts && npm install
 ```
 
@@ -169,7 +193,8 @@ external scheduler to run the same prepare -> summarize -> deliver flow.
 When customizing for higher-quality AI/Agent/GPU aggregation, edit sources and
 prompts separately:
 
-- Add or remove source accounts in `config/default-sources.json`
+- Curated tier: edit `config/default-sources.json` (maintainer)
+- BestBlogs extended catalog: update OPML under `config/bestblogs/opml/`, run `npm run import-bestblogs`
 - Adjust ranking and summarization criteria in `prompts/summarize-*.md`
 - Keep generated feed files as outputs; do not hand-edit them unless debugging
 

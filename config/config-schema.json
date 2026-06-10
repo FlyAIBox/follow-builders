@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$comment": "Follow Builders 用户配置 schema。实际用户配置保存在 ~/.follow-builders/config.json；本文件用于说明字段含义、默认值和可选范围。",
+  "$comment": "Follow Builders 用户配置 schema。实际用户配置保存在 ~/.follow-builders/config.json；本文件用于说明字段含义、默认值和可选范围。信息源列表见 config/default-sources.json（精选）与 config/bestblogs-sources.json（BestBlogs 扩展），文档见 config/README.md。",
   "description": "User configuration for Follow Builders skill. Stored at ~/.follow-builders/config.json",
   "type": "object",
   "properties": {

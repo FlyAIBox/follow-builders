@@ -1,5 +1,32 @@
 {
-  "_comment": "Follow Builders 默认信息源注册表。JSON 不支持 // 注释，因此用 _comment、_notes、focus 等字段保存中文说明；抓取脚本只读取 podcasts、blogs、x_accounts 中的必要字段，额外说明字段不会影响运行。",
+  "_comment": "Follow Builders 默认信息源注册表（精选层）。JSON 不支持 // 注释，因此用 _comment、_notes、focus 等字段保存说明；抓取脚本只读取 podcasts、blogs、x_accounts 中的必要字段，额外说明字段不会影响运行。",
+  "_philosophy": {
+    "en": "Follow builders who ship products and share original opinions — not influencers who only repackage news.",
+    "zh": "追踪那些真正在做产品、有独立见解的建造者（Builders），而非只会搬运信息的网红（Influencers）。"
+  },
+  "_extended_catalog": {
+    "file": "config/bestblogs-sources.json",
+    "description_zh": "BestBlogs 扩展信息源目录（400 个），由 OPML 导入生成；日常 digest 默认仍使用本文件的精选列表。",
+    "description_en": "BestBlogs extended catalog (400 RSS sources) imported from OPML; the default daily digest still uses this curated list.",
+    "regenerate": "cd scripts && npm run import-bestblogs",
+    "config_docs": "config/README.md"
+  },
+  "_attribution_bestblogs": {
+    "attribution_zh": "信息源 OPML 来自 bestblogs.dev 的公开分享",
+    "attribution_en": "OPML subscriptions shared publicly by bestblogs.dev",
+    "website": "https://bestblogs.dev",
+    "repository": "https://github.com/ginobefun/BestBlogs",
+    "article": "https://www.ginonotes.com/posts/bestblogs-sources-part2-podcasts-videos",
+    "opml_dir": "config/bestblogs/opml/",
+    "opml_files": {
+      "all": "BestBlogs_RSS_ALL.opml",
+      "articles": "BestBlogs_RSS_Articles.opml",
+      "podcasts": "BestBlogs_RSS_Podcasts.opml",
+      "videos": "BestBlogs_RSS_Videos.opml",
+      "twitters": "BestBlogs_RSS_Twitters.opml"
+    },
+    "counts": { "all": 400, "articles": 170, "podcasts": 30, "videos": 40, "twitters": 160 }
+  },
   "_quality_notes": [
     "信息源优先选择一手建设者、官方团队、研究/产品负责人、Agent 工具链和推理/GPU/基础设施相关实践者。",
     "focus 字段用于提示该来源的主要信号类型，后续 feed 会把它传给 LLM，帮助摘要层区分产品发布、Agent 工作流、模型能力、基础设施与市场观点。",
